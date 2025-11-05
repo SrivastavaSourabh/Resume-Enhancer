@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FANG Resume Enhancer - Get Hired at Top Tech Companies</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🚀 FANG Resume Enhancer</h1>
+            <p class="subtitle">Optimize your resume for Meta, Amazon, Netflix, Google & other top tech companies</p>
+        </header>
+
+        <div class="upload-section">
+            <div class="upload-box" id="uploadBox">
+                <div class="upload-icon">📄</div>
+                <h3>Upload Your Resume</h3>
+                <p>Support: PDF, DOCX, TXT (Max 16MB)</p>
+                <input type="file" id="fileInput" accept=".pdf,.docx,.txt" hidden>
+                <button class="upload-btn" onclick="document.getElementById('fileInput').click()">
+                    Choose File
+                </button>
+                <p class="file-name" id="fileName"></p>
+            </div>
+
+            <div class="company-selector">
+                <label for="companySelect">Target Company (Optional):</label>
+                <select id="companySelect">
+                    <option value="all">All FANG Companies</option>
+                    <option value="meta">Meta (Facebook)</option>
+                    <option value="amazon">Amazon</option>
+                    <option value="netflix">Netflix</option>
+                    <option value="google">Google</option>
+                </select>
+            </div>
+
+            <button class="analyze-btn" id="analyzeBtn" onclick="analyzeResume()" disabled>
+                Analyze Resume
+            </button>
+        </div>
+
+        <div id="loading" class="loading hidden">
+            <div class="spinner"></div>
+            <p>Analyzing your resume...</p>
+        </div>
+
+        <div id="results" class="results hidden">
+            <div class="score-card">
+                <h2>Resume Score</h2>
+                <div class="score-circle">
+                    <svg class="score-svg" viewBox="0 0 100 100">
+                        <circle class="score-bg" cx="50" cy="50" r="45"></circle>
+                        <circle class="score-progress" cx="50" cy="50" r="45" id="scoreCircle"></circle>
+                    </svg>
+                    <div class="score-text">
+                        <span id="overallScore">0</span>
+                        <small>/100</small>
+                    </div>
+                </div>
+                <div class="score-details">
+                    <div class="score-item">
+                        <span>ATS Score</span>
+                        <span id="atsScore">0</span>
+                    </div>
+                    <div class="score-item">
+                        <span>Keywords Found</span>
+                        <span id="keywordCount">0</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="analysis-section">
+                <div class="tab-container">
+                    <button class="tab-btn active" onclick="showTab('keywords')">Keywords</button>
+                    <button class="tab-btn" onclick="showTab('gaps')">Skills Gaps</button>
+                    <button class="tab-btn" onclick="showTab('suggestions')">Suggestions</button>
+                    <button class="tab-btn" onclick="showTab('stats')">Statistics</button>
+                </div>
+
+                <div id="keywordsTab" class="tab-content active">
+                    <h3>Keywords Analysis</h3>
+                    <div class="keyword-section">
+                        <h4>✅ Found Keywords</h4>
+                        <div class="keyword-tags" id="foundKeywords"></div>
+                    </div>
+                    <div class="keyword-section">
+                        <h4>❌ Missing Keywords</h4>
+                        <div class="keyword-tags missing" id="missingKeywords"></div>
+                    </div>
+                </div>
+
+                <div id="gapsTab" class="tab-content">
+                    <h3>Company-Specific Skills Gaps</h3>
+                    <div id="gapsContent"></div>
+                </div>
+
+                <div id="suggestionsTab" class="tab-content">
+                    <h3>Improvement Suggestions</h3>
+                    <div id="suggestionsContent"></div>
+                </div>
+
+                <div id="statsTab" class="tab-content">
+                    <h3>Resume Statistics</h3>
+                    <div id="statsContent"></div>
+                </div>
+            </div>
+        </div>
+
+        <div id="error" class="error hidden"></div>
+    </div>
+
+    <footer>
+        <p>Built with ❤️ for FANG aspirants | Powered by AI</p>
+    </footer>
+
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>
+
