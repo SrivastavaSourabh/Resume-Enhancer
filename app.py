@@ -141,20 +141,21 @@ _nltk_initialized = False
 def _initialize_nltk():
     """Initialize NLTK data - only runs once"""
     global _nltk_initialized
-    if _nltk_initialized:
+    if _nltk_initialized or not NLTK_AVAILABLE:
         return
     
     try:
         # Try to find existing data
-        nltk.data.find('tokenizers/punkt')
-        nltk.data.find('corpora/stopwords')
-        _nltk_initialized = True
-        return
-    except LookupError:
+        if NLTK_AVAILABLE:
+            nltk.data.find('tokenizers/punkt')
+            nltk.data.find('corpora/stopwords')
+            _nltk_initialized = True
+            return
+    except (LookupError, AttributeError, NameError):
         pass
     
     # Try to download if not found (skip in Vercel to avoid timeout)
-    if not os.environ.get('VERCEL'):
+    if not os.environ.get('VERCEL') and NLTK_AVAILABLE:
         try:
             nltk.download('punkt', quiet=True)
             nltk.download('stopwords', quiet=True)
