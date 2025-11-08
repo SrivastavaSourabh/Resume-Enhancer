@@ -3,6 +3,7 @@ from flask_cors import CORS
 import os
 import re
 import json
+import uuid
 from werkzeug.utils import secure_filename
 import PyPDF2
 import docx
@@ -12,17 +13,23 @@ from nltk.corpus import stopwords
 from nltk.tokenize import word_tokenize
 import string
 
+# Configure NLTK data path for Vercel serverless
+if os.environ.get('VERCEL'):
+    nltk.data.path.append('/tmp/nltk_data')
+
 app = Flask(__name__, static_folder='static', template_folder='templates')
 CORS(app)
 
 # Configuration
-UPLOAD_FOLDER = 'uploads'
+# Use /tmp for Vercel serverless, uploads for local
+UPLOAD_FOLDER = '/tmp' if os.environ.get('VERCEL') else 'uploads'
 ALLOWED_EXTENSIONS = {'pdf', 'docx', 'txt'}
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
 
-# Create uploads directory
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+# Create uploads directory (only for local, /tmp exists in Vercel)
+if not os.environ.get('VERCEL'):
+    os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 # FANG-specific keywords and requirements
 FANG_KEYWORDS = {
@@ -110,21 +117,23 @@ def preprocess_text(text):
 def extract_keywords(text):
     """Extract keywords from text"""
     try:
-        # Download required NLTK data
+        # Download required NLTK data (with better error handling for Vercel)
         try:
             nltk.data.find('tokenizers/punkt')
         except LookupError:
             try:
-                nltk.download('punkt', quiet=True)
-            except:
+                download_dir = '/tmp/nltk_data' if os.environ.get('VERCEL') else None
+                nltk.download('punkt', quiet=True, download_dir=download_dir)
+            except Exception:
                 pass
         
         try:
             nltk.data.find('corpora/stopwords')
         except LookupError:
             try:
-                nltk.download('stopwords', quiet=True)
-            except:
+                download_dir = '/tmp/nltk_data' if os.environ.get('VERCEL') else None
+                nltk.download('stopwords', quiet=True, download_dir=download_dir)
+            except Exception:
                 pass
         
         try:
@@ -132,7 +141,7 @@ def extract_keywords(text):
             stop_words = set(stopwords.words('english'))
             keywords = [word for word in words if word.isalnum() and word not in stop_words and len(word) > 2]
             return keywords
-        except:
+        except Exception:
             # Fallback if NLTK fails
             words = preprocess_text(text).split()
             keywords = [w for w in words if len(w) > 2 and w.isalnum()]
@@ -271,7 +280,11 @@ def analyze_resume():
             return jsonify({'error': 'Invalid file type. Please upload PDF, DOCX, or TXT'}), 400
         
         filename = secure_filename(file.filename)
-        file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        # Use unique filename for Vercel serverless to avoid conflicts
+        unique_id = str(uuid.uuid4())
+        file_ext = filename.rsplit('.', 1)[1].lower() if '.' in filename else 'tmp'
+        unique_filename = f"{unique_id}.{file_ext}"
+        file_path = os.path.join(app.config['UPLOAD_FOLDER'], unique_filename)
         file.save(file_path)
         
         # Extract text
@@ -322,6 +335,9 @@ def analyze_resume():
 @app.route('/api/health', methods=['GET'])
 def health():
     return jsonify({'status': 'healthy', 'message': 'Resume Enhancement API is running'})
+
+# Export app for Vercel
+# Vercel will automatically detect the Flask app
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)
