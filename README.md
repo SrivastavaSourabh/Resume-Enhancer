@@ -1,11 +1,11 @@
-# 🚀 FANG Resume Enhancer
+# 🚀 FAANG Resume Enhancer
 
-A powerful web application to optimize your resume for FANG companies (Meta, Amazon, Netflix, Google) and other top tech companies. Get personalized suggestions, ATS compatibility scores, and skills gap analysis.
+A powerful web application to optimize your resume for FAANG companies (Meta, Amazon, Netflix, Google) and other top tech companies. Get personalized suggestions, ATS compatibility scores, and skills gap analysis.
 
 ## Features
 
 - 📊 **ATS Compatibility Scoring**: Get your resume's compatibility score with Applicant Tracking Systems
-- 🎯 **FANG-Specific Analysis**: Targeted optimization for Meta, Amazon, Netflix, and Google
+- 🎯 **FAANG-Specific Analysis**: Targeted optimization for Meta, Amazon, Netflix, and Google
 - 🔍 **Keyword Analysis**: Identify missing and present keywords relevant to tech companies
 - 💡 **Smart Suggestions**: Get actionable recommendations to improve your resume
 - 📈 **Skills Gap Analysis**: See what skills you're missing for specific companies
