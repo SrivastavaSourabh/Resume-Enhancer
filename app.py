@@ -114,28 +114,48 @@ def preprocess_text(text):
     text = re.sub(r'[^\w\s]', ' ', text)
     return text
 
+# Initialize NLTK data once (lazy loading)
+_nltk_initialized = False
+
+def _initialize_nltk():
+    """Initialize NLTK data - only runs once"""
+    global _nltk_initialized
+    if _nltk_initialized:
+        return
+    
+    try:
+        # Try to find existing data
+        nltk.data.find('tokenizers/punkt')
+        nltk.data.find('corpora/stopwords')
+        _nltk_initialized = True
+        return
+    except LookupError:
+        pass
+    
+    # Try to download if not found (skip in Vercel to avoid timeout)
+    if not os.environ.get('VERCEL'):
+        try:
+            nltk.download('punkt', quiet=True)
+            nltk.download('stopwords', quiet=True)
+            _nltk_initialized = True
+        except Exception:
+            pass
+
 def extract_keywords(text):
     """Extract keywords from text"""
+    # Skip NLTK in Vercel to avoid timeouts - use simple extraction
+    if os.environ.get('VERCEL'):
+        # Simple keyword extraction for Vercel (no NLTK)
+        words = preprocess_text(text).split()
+        keywords = [w for w in words if len(w) > 2 and w.isalnum()]
+        # Filter common stopwords manually
+        common_stopwords = {'the', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'from', 'as', 'is', 'was', 'are', 'were', 'been', 'be', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'should', 'could', 'may', 'might', 'must', 'can', 'this', 'that', 'these', 'those', 'a', 'an'}
+        keywords = [w for w in keywords if w not in common_stopwords]
+        return keywords
+    
+    # Use NLTK for local development
     try:
-        # Download required NLTK data (with better error handling for Vercel)
-        try:
-            nltk.data.find('tokenizers/punkt')
-        except LookupError:
-            try:
-                download_dir = '/tmp/nltk_data' if os.environ.get('VERCEL') else None
-                nltk.download('punkt', quiet=True, download_dir=download_dir)
-            except Exception:
-                pass
-        
-        try:
-            nltk.data.find('corpora/stopwords')
-        except LookupError:
-            try:
-                download_dir = '/tmp/nltk_data' if os.environ.get('VERCEL') else None
-                nltk.download('stopwords', quiet=True, download_dir=download_dir)
-            except Exception:
-                pass
-        
+        _initialize_nltk()
         try:
             words = word_tokenize(preprocess_text(text))
             stop_words = set(stopwords.words('english'))
@@ -285,41 +305,66 @@ def analyze_resume():
         file_ext = filename.rsplit('.', 1)[1].lower() if '.' in filename else 'tmp'
         unique_filename = f"{unique_id}.{file_ext}"
         file_path = os.path.join(app.config['UPLOAD_FOLDER'], unique_filename)
-        file.save(file_path)
+        
+        try:
+            file.save(file_path)
+        except Exception as e:
+            return jsonify({'error': f'Failed to save file: {str(e)}'}), 500
         
         # Extract text
-        resume_text = extract_text_from_file(file_path, filename)
+        try:
+            resume_text = extract_text_from_file(file_path, filename)
+        except Exception as e:
+            # Cleanup on error
+            try:
+                os.remove(file_path)
+            except:
+                pass
+            return jsonify({'error': f'Failed to extract text: {str(e)}'}), 500
         
         if not resume_text or len(resume_text.strip()) < 50:
+            # Cleanup
+            try:
+                os.remove(file_path)
+            except:
+                pass
             return jsonify({'error': 'Could not extract sufficient text from resume'}), 400
         
         # Analyze
-        keywords = extract_keywords(resume_text)
-        ats_score, found_keywords, missing_keywords = calculate_ats_score(resume_text, keywords)
-        gaps = analyze_skills_gap(resume_text, request.form.get('company', 'all'))
-        sections = extract_sections(resume_text)
-        suggestions = generate_suggestions(resume_text, ats_score, gaps, found_keywords)
-        
-        # Calculate overall score
-        overall_score = (ats_score * 0.6) + (min(len(found_keywords) / 30 * 100, 100) * 0.4)
-        
-        result = {
-            'success': True,
-            'stats': {
-                'word_count': len(resume_text.split()),
-                'keyword_count': len(keywords),
-                'ats_score': round(ats_score, 2),
-                'overall_score': round(overall_score, 2)
-            },
-            'keywords': {
-                'found': found_keywords[:30],
-                'missing': missing_keywords
-            },
-            'skills_gaps': gaps,
-            'sections': sections,
-            'suggestions': suggestions,
-            'resume_preview': resume_text[:500] + '...' if len(resume_text) > 500 else resume_text
-        }
+        try:
+            keywords = extract_keywords(resume_text)
+            ats_score, found_keywords, missing_keywords = calculate_ats_score(resume_text, keywords)
+            gaps = analyze_skills_gap(resume_text, request.form.get('company', 'all'))
+            sections = extract_sections(resume_text)
+            suggestions = generate_suggestions(resume_text, ats_score, gaps, found_keywords)
+            
+            # Calculate overall score
+            overall_score = (ats_score * 0.6) + (min(len(found_keywords) / 30 * 100, 100) * 0.4)
+            
+            result = {
+                'success': True,
+                'stats': {
+                    'word_count': len(resume_text.split()),
+                    'keyword_count': len(keywords),
+                    'ats_score': round(ats_score, 2),
+                    'overall_score': round(overall_score, 2)
+                },
+                'keywords': {
+                    'found': found_keywords[:30],
+                    'missing': missing_keywords
+                },
+                'skills_gaps': gaps,
+                'sections': sections,
+                'suggestions': suggestions,
+                'resume_preview': resume_text[:500] + '...' if len(resume_text) > 500 else resume_text
+            }
+        except Exception as e:
+            # Cleanup on error
+            try:
+                os.remove(file_path)
+            except:
+                pass
+            return jsonify({'error': f'Analysis failed: {str(e)}'}), 500
         
         # Cleanup
         try:
@@ -330,7 +375,7 @@ def analyze_resume():
         return jsonify(result)
     
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': f'Server error: {str(e)}'}), 500
 
 @app.route('/api/health', methods=['GET'])
 def health():
