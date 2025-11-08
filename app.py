@@ -8,16 +8,37 @@ from werkzeug.utils import secure_filename
 import PyPDF2
 import docx
 from collections import Counter
-import nltk
-from nltk.corpus import stopwords
-from nltk.tokenize import word_tokenize
 import string
 
-# Configure NLTK data path for Vercel serverless
-if os.environ.get('VERCEL'):
-    nltk.data.path.append('/tmp/nltk_data')
+# Import NLTK with error handling for Vercel
+NLTK_AVAILABLE = False
+try:
+    import nltk
+    from nltk.corpus import stopwords
+    from nltk.tokenize import word_tokenize
+    NLTK_AVAILABLE = True
+    # Configure NLTK data path for Vercel serverless
+    if os.environ.get('VERCEL'):
+        nltk.data.path.append('/tmp/nltk_data')
+except (ImportError, Exception):
+    NLTK_AVAILABLE = False
+    # Create dummy functions if NLTK is not available
+    def word_tokenize(text):
+        return text.split()
+    # stopwords will be None, we'll handle it in the code
 
-app = Flask(__name__, static_folder='static', template_folder='templates')
+# Fix paths for Vercel serverless (when running from api/index.py)
+if os.environ.get('VERCEL'):
+    # Use absolute paths for Vercel
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    static_folder = os.path.join(base_dir, 'static')
+    template_folder = os.path.join(base_dir, 'templates')
+else:
+    # Use relative paths for local development
+    static_folder = 'static'
+    template_folder = 'templates'
+
+app = Flask(__name__, static_folder=static_folder, template_folder=template_folder)
 CORS(app)
 
 # Configuration
@@ -154,23 +175,26 @@ def extract_keywords(text):
         return keywords
     
     # Use NLTK for local development
-    try:
-        _initialize_nltk()
+    if not os.environ.get('VERCEL') and NLTK_AVAILABLE:
         try:
-            words = word_tokenize(preprocess_text(text))
-            stop_words = set(stopwords.words('english'))
-            keywords = [word for word in words if word.isalnum() and word not in stop_words and len(word) > 2]
-            return keywords
+            _initialize_nltk()
+            try:
+                words = word_tokenize(preprocess_text(text))
+                if 'stopwords' in globals():
+                    stop_words = set(stopwords.words('english'))
+                else:
+                    stop_words = set()
+                keywords = [word for word in words if word.isalnum() and word not in stop_words and len(word) > 2]
+                return keywords
+            except Exception:
+                pass
         except Exception:
-            # Fallback if NLTK fails
-            words = preprocess_text(text).split()
-            keywords = [w for w in words if len(w) > 2 and w.isalnum()]
-            return keywords
-    except Exception as e:
-        # Final fallback: simple word extraction
-        words = preprocess_text(text).split()
-        keywords = [w for w in words if len(w) > 2 and w.isalnum()]
-        return keywords
+            pass
+    
+    # Fallback: simple word extraction (always works)
+    words = preprocess_text(text).split()
+    keywords = [w for w in words if len(w) > 2 and w.isalnum()]
+    return keywords
 
 def calculate_ats_score(resume_text, keywords):
     """Calculate ATS compatibility score"""
