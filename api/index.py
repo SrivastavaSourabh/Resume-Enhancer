@@ -1,6 +1,6 @@
 """
 Vercel serverless function handler for Flask app
-Using Vercel's recommended pattern for Flask applications
+This version has comprehensive error handling to identify import issues
 """
 import sys
 import os
@@ -14,8 +14,44 @@ if parent_dir not in sys.path:
 # Set VERCEL environment before any imports
 os.environ['VERCEL'] = '1'
 
-# Import Flask app - this must succeed for Vercel
-from app import app
+# Try importing with detailed error reporting
+try:
+    from app import app
+    print("✓ Successfully imported Flask app")
+except ImportError as e:
+    print(f"✗ ImportError: {e}")
+    import traceback
+    traceback.print_exc()
+    # Create minimal error app
+    from flask import Flask, jsonify
+    app = Flask(__name__)
+    
+    @app.route('/')
+    @app.route('/<path:path>')
+    def error(path=''):
+        return jsonify({
+            'error': 'Import failed',
+            'message': str(e),
+            'type': 'ImportError'
+        }), 500
+except Exception as e:
+    print(f"✗ Unexpected error: {e}")
+    import traceback
+    traceback.print_exc()
+    # Create minimal error app
+    from flask import Flask, jsonify
+    app = Flask(__name__)
+    
+    @app.route('/')
+    @app.route('/<path:path>')
+    def error(path=''):
+        import traceback
+        return jsonify({
+            'error': 'Initialization failed',
+            'message': str(e),
+            'type': type(e).__name__,
+            'traceback': traceback.format_exc()
+        }), 500
 
-# Vercel automatically detects Flask apps exported as 'app'
-# No additional handler function needed
+# Export app for Vercel
+print("✓ Handler initialized successfully")

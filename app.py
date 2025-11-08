@@ -1,14 +1,39 @@
 from flask import Flask, request, jsonify, render_template, send_from_directory
-from flask_cors import CORS
 import os
 import re
 import json
 import uuid
-from werkzeug.utils import secure_filename
-import PyPDF2
-import docx
 from collections import Counter
 import string
+
+# Import CORS with error handling
+CORS_AVAILABLE = False
+try:
+    from flask_cors import CORS
+    CORS_AVAILABLE = True
+except ImportError:
+    print("Warning: flask-cors not available, CORS disabled")
+
+# Import file processing libraries with error handling
+try:
+    from werkzeug.utils import secure_filename
+except ImportError:
+    def secure_filename(filename):
+        return filename.replace(' ', '_').replace('/', '_').replace('\\', '_')
+
+PDF_AVAILABLE = False
+try:
+    import PyPDF2
+    PDF_AVAILABLE = True
+except ImportError:
+    print("Warning: PyPDF2 not available, PDF processing disabled")
+
+DOCX_AVAILABLE = False
+try:
+    import docx
+    DOCX_AVAILABLE = True
+except ImportError:
+    print("Warning: python-docx not available, DOCX processing disabled")
 
 # Import NLTK with error handling for Vercel
 NLTK_AVAILABLE = False
@@ -39,7 +64,8 @@ else:
     template_folder = 'templates'
 
 app = Flask(__name__, static_folder=static_folder, template_folder=template_folder)
-CORS(app)
+if CORS_AVAILABLE:
+    CORS(app)
 
 # Configuration
 # Use /tmp for Vercel serverless, uploads for local
@@ -97,6 +123,8 @@ def allowed_file(filename):
 
 def extract_text_from_pdf(file_path):
     """Extract text from PDF file"""
+    if not PDF_AVAILABLE:
+        return "Error: PyPDF2 library not available. PDF processing is disabled."
     try:
         text = ""
         with open(file_path, 'rb') as file:
@@ -109,6 +137,8 @@ def extract_text_from_pdf(file_path):
 
 def extract_text_from_docx(file_path):
     """Extract text from DOCX file"""
+    if not DOCX_AVAILABLE:
+        return "Error: python-docx library not available. DOCX processing is disabled."
     try:
         doc = docx.Document(file_path)
         text = "\n".join([paragraph.text for paragraph in doc.paragraphs])
