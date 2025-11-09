@@ -1,82 +1,38 @@
-from flask import Flask, request, jsonify, render_template, send_from_directory
+from flask import Flask, request, jsonify, render_template
+from flask_cors import CORS
 import os
 import re
-import json
 import uuid
+from werkzeug.utils import secure_filename
+import PyPDF2
+import docx
 from collections import Counter
-import string
+import nltk
+from nltk.corpus import stopwords
+from nltk.tokenize import word_tokenize
 
-# Import CORS with error handling
-CORS_AVAILABLE = False
-try:
-    from flask_cors import CORS
-    CORS_AVAILABLE = True
-except ImportError:
-    print("Warning: flask-cors not available, CORS disabled")
-
-# Import file processing libraries with error handling
-try:
-    from werkzeug.utils import secure_filename
-except ImportError:
-    def secure_filename(filename):
-        return filename.replace(' ', '_').replace('/', '_').replace('\\', '_')
-
-PDF_AVAILABLE = False
-try:
-    import PyPDF2
-    PDF_AVAILABLE = True
-except ImportError:
-    print("Warning: PyPDF2 not available, PDF processing disabled")
-
-DOCX_AVAILABLE = False
-try:
-    import docx
-    DOCX_AVAILABLE = True
-except ImportError:
-    print("Warning: python-docx not available, DOCX processing disabled")
-
-# Import NLTK with error handling for Vercel
-NLTK_AVAILABLE = False
-try:
-    import nltk
-    from nltk.corpus import stopwords
-    from nltk.tokenize import word_tokenize
-    NLTK_AVAILABLE = True
-    # Configure NLTK data path for Vercel serverless
-    if os.environ.get('VERCEL'):
-        nltk.data.path.append('/tmp/nltk_data')
-except (ImportError, Exception):
-    NLTK_AVAILABLE = False
-    # Create dummy functions if NLTK is not available
-    def word_tokenize(text):
-        return text.split()
-    # stopwords will be None, we'll handle it in the code
-
-# Fix paths for Vercel serverless (when running from api/index.py)
-if os.environ.get('VERCEL'):
-    # Use absolute paths for Vercel
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    static_folder = os.path.join(base_dir, 'static')
-    template_folder = os.path.join(base_dir, 'templates')
-else:
-    # Use relative paths for local development
-    static_folder = 'static'
-    template_folder = 'templates'
-
-app = Flask(__name__, static_folder=static_folder, template_folder=template_folder)
-if CORS_AVAILABLE:
-    CORS(app)
+app = Flask(__name__, static_folder='static', template_folder='templates')
+CORS(app)
 
 # Configuration
-# Use /tmp for Vercel serverless, uploads for local
-UPLOAD_FOLDER = '/tmp' if os.environ.get('VERCEL') else 'uploads'
+UPLOAD_FOLDER = 'uploads'
 ALLOWED_EXTENSIONS = {'pdf', 'docx', 'txt'}
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
 
-# Create uploads directory (only for local, /tmp exists in Vercel)
-if not os.environ.get('VERCEL'):
-    os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+# Create uploads directory
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
+# Download NLTK data if needed
+try:
+    nltk.data.find('tokenizers/punkt')
+except LookupError:
+    nltk.download('punkt', quiet=True)
+
+try:
+    nltk.data.find('corpora/stopwords')
+except LookupError:
+    nltk.download('stopwords', quiet=True)
 
 # FANG-specific keywords and requirements
 FANG_KEYWORDS = {
@@ -123,8 +79,6 @@ def allowed_file(filename):
 
 def extract_text_from_pdf(file_path):
     """Extract text from PDF file"""
-    if not PDF_AVAILABLE:
-        return "Error: PyPDF2 library not available. PDF processing is disabled."
     try:
         text = ""
         with open(file_path, 'rb') as file:
@@ -137,8 +91,6 @@ def extract_text_from_pdf(file_path):
 
 def extract_text_from_docx(file_path):
     """Extract text from DOCX file"""
-    if not DOCX_AVAILABLE:
-        return "Error: python-docx library not available. DOCX processing is disabled."
     try:
         doc = docx.Document(file_path)
         text = "\n".join([paragraph.text for paragraph in doc.paragraphs])
@@ -161,71 +113,21 @@ def extract_text_from_file(file_path, filename):
 def preprocess_text(text):
     """Clean and preprocess text"""
     text = text.lower()
-    # Remove special characters but keep spaces
     text = re.sub(r'[^\w\s]', ' ', text)
     return text
 
-# Initialize NLTK data once (lazy loading)
-_nltk_initialized = False
-
-def _initialize_nltk():
-    """Initialize NLTK data - only runs once"""
-    global _nltk_initialized
-    if _nltk_initialized or not NLTK_AVAILABLE:
-        return
-    
-    try:
-        # Try to find existing data
-        if NLTK_AVAILABLE:
-            nltk.data.find('tokenizers/punkt')
-            nltk.data.find('corpora/stopwords')
-            _nltk_initialized = True
-            return
-    except (LookupError, AttributeError, NameError):
-        pass
-    
-    # Try to download if not found (skip in Vercel to avoid timeout)
-    if not os.environ.get('VERCEL') and NLTK_AVAILABLE:
-        try:
-            nltk.download('punkt', quiet=True)
-            nltk.download('stopwords', quiet=True)
-            _nltk_initialized = True
-        except Exception:
-            pass
-
 def extract_keywords(text):
     """Extract keywords from text"""
-    # Skip NLTK in Vercel to avoid timeouts - use simple extraction
-    if os.environ.get('VERCEL'):
-        # Simple keyword extraction for Vercel (no NLTK)
+    try:
+        words = word_tokenize(preprocess_text(text))
+        stop_words = set(stopwords.words('english'))
+        keywords = [word for word in words if word.isalnum() and word not in stop_words and len(word) > 2]
+        return keywords
+    except Exception:
+        # Fallback if NLTK fails
         words = preprocess_text(text).split()
         keywords = [w for w in words if len(w) > 2 and w.isalnum()]
-        # Filter common stopwords manually
-        common_stopwords = {'the', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'from', 'as', 'is', 'was', 'are', 'were', 'been', 'be', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'should', 'could', 'may', 'might', 'must', 'can', 'this', 'that', 'these', 'those', 'a', 'an'}
-        keywords = [w for w in keywords if w not in common_stopwords]
         return keywords
-    
-    # Use NLTK for local development
-    if not os.environ.get('VERCEL') and NLTK_AVAILABLE:
-        try:
-            _initialize_nltk()
-            try:
-                words = word_tokenize(preprocess_text(text))
-                if 'stopwords' in globals():
-                    stop_words = set(stopwords.words('english'))
-                else:
-                    stop_words = set()
-                keywords = [word for word in words if word.isalnum() and word not in stop_words and len(word) > 2]
-                return keywords
-            except Exception:
-                pass
-        except Exception:
-            pass
-    
-    # Fallback: simple word extraction (always works)
-    words = preprocess_text(text).split()
-    keywords = [w for w in words if len(w) > 2 and w.isalnum()]
-    return keywords
 
 def calculate_ats_score(resume_text, keywords):
     """Calculate ATS compatibility score"""
@@ -244,7 +146,7 @@ def calculate_ats_score(resume_text, keywords):
             missing_keywords.append(keyword)
     
     score = (len(found_keywords) / len(all_keywords)) * 100 if all_keywords else 0
-    return min(score, 100), found_keywords, missing_keywords[:20]  # Limit missing to 20
+    return min(score, 100), found_keywords, missing_keywords[:20]
 
 def analyze_skills_gap(resume_text, company='all'):
     """Analyze skills gap for specific FANG company"""
@@ -355,30 +257,16 @@ def analyze_resume():
             return jsonify({'error': 'Invalid file type. Please upload PDF, DOCX, or TXT'}), 400
         
         filename = secure_filename(file.filename)
-        # Use unique filename for Vercel serverless to avoid conflicts
         unique_id = str(uuid.uuid4())
         file_ext = filename.rsplit('.', 1)[1].lower() if '.' in filename else 'tmp'
         unique_filename = f"{unique_id}.{file_ext}"
         file_path = os.path.join(app.config['UPLOAD_FOLDER'], unique_filename)
-        
-        try:
-            file.save(file_path)
-        except Exception as e:
-            return jsonify({'error': f'Failed to save file: {str(e)}'}), 500
+        file.save(file_path)
         
         # Extract text
-        try:
-            resume_text = extract_text_from_file(file_path, filename)
-        except Exception as e:
-            # Cleanup on error
-            try:
-                os.remove(file_path)
-            except:
-                pass
-            return jsonify({'error': f'Failed to extract text: {str(e)}'}), 500
+        resume_text = extract_text_from_file(file_path, filename)
         
         if not resume_text or len(resume_text.strip()) < 50:
-            # Cleanup
             try:
                 os.remove(file_path)
             except:
@@ -386,40 +274,32 @@ def analyze_resume():
             return jsonify({'error': 'Could not extract sufficient text from resume'}), 400
         
         # Analyze
-        try:
-            keywords = extract_keywords(resume_text)
-            ats_score, found_keywords, missing_keywords = calculate_ats_score(resume_text, keywords)
-            gaps = analyze_skills_gap(resume_text, request.form.get('company', 'all'))
-            sections = extract_sections(resume_text)
-            suggestions = generate_suggestions(resume_text, ats_score, gaps, found_keywords)
-            
-            # Calculate overall score
-            overall_score = (ats_score * 0.6) + (min(len(found_keywords) / 30 * 100, 100) * 0.4)
-            
-            result = {
-                'success': True,
-                'stats': {
-                    'word_count': len(resume_text.split()),
-                    'keyword_count': len(keywords),
-                    'ats_score': round(ats_score, 2),
-                    'overall_score': round(overall_score, 2)
-                },
-                'keywords': {
-                    'found': found_keywords[:30],
-                    'missing': missing_keywords
-                },
-                'skills_gaps': gaps,
-                'sections': sections,
-                'suggestions': suggestions,
-                'resume_preview': resume_text[:500] + '...' if len(resume_text) > 500 else resume_text
-            }
-        except Exception as e:
-            # Cleanup on error
-            try:
-                os.remove(file_path)
-            except:
-                pass
-            return jsonify({'error': f'Analysis failed: {str(e)}'}), 500
+        keywords = extract_keywords(resume_text)
+        ats_score, found_keywords, missing_keywords = calculate_ats_score(resume_text, keywords)
+        gaps = analyze_skills_gap(resume_text, request.form.get('company', 'all'))
+        sections = extract_sections(resume_text)
+        suggestions = generate_suggestions(resume_text, ats_score, gaps, found_keywords)
+        
+        # Calculate overall score
+        overall_score = (ats_score * 0.6) + (min(len(found_keywords) / 30 * 100, 100) * 0.4)
+        
+        result = {
+            'success': True,
+            'stats': {
+                'word_count': len(resume_text.split()),
+                'keyword_count': len(keywords),
+                'ats_score': round(ats_score, 2),
+                'overall_score': round(overall_score, 2)
+            },
+            'keywords': {
+                'found': found_keywords[:30],
+                'missing': missing_keywords
+            },
+            'skills_gaps': gaps,
+            'sections': sections,
+            'suggestions': suggestions,
+            'resume_preview': resume_text[:500] + '...' if len(resume_text) > 500 else resume_text
+        }
         
         # Cleanup
         try:
@@ -430,15 +310,11 @@ def analyze_resume():
         return jsonify(result)
     
     except Exception as e:
-        return jsonify({'error': f'Server error: {str(e)}'}), 500
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/health', methods=['GET'])
 def health():
     return jsonify({'status': 'healthy', 'message': 'Resume Enhancement API is running'})
 
-# Export app for Vercel
-# Vercel will automatically detect the Flask app
-
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)
-
